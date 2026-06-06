@@ -7,10 +7,9 @@ module.exports = {
   entry: ["./src/index.js"],
   devtool: "inline-source-map",
   devServer: {
-    contentBase: "./dist",
+    static: "./dist",
     open: false,
     hot: true,
-    // writeToDisk: true,
   },
   plugins: [
     // new CleanWebpackPlugin(),
