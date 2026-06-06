@@ -1,0 +1,43 @@
+{
+  "name": "research-simulations",
+  "version": "1.0.0",
+  "description": "Research Project at SUNY Korea",
+  "private": true,
+  "dependencies": {
+    "clean-webpack-plugin": "^0.1.19",
+    "dat.gui": "^0.7.7",
+    "html-webpack-plugin": "^5.5.3",
+    "three": "^0.135.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^3.3.12",
+    "webpack-merge": "^4.1.0"
+  },
+  "devDependencies": {
+    "file-loader": "^6.2.0",
+    "raw-loader": "^4.0.2",
+    "webpack-dev-server": "^3.11.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack --config=webpack.prod.js",
+    "build-dev": "webpack --config=webpack.dev.js",
+    "start": "webpack-dev-server --open --config=webpack.dev.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/purushekhawat/3d-agent-based-epidemic-simulation.git"
+  },
+  "keywords": [
+    "pandemic",
+    "covid-19",
+    "simulation",
+    "threejs",
+    "research"
+  ],
+  "author": "Puru Shekhawat",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/purushekhawat/3d-agent-based-epidemic-simulation/issues"
+  },
+  "homepage": "https://github.com/purushekhawat/3d-agent-based-epidemic-simulation#readme"
+}
