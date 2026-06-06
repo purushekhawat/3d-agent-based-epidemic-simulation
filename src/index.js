@@ -23,6 +23,61 @@ var probability = function (n) {
 };
 var elapsedDays = 1;
 
+class AStar {
+  constructor(start, end) {
+    this.start = { x: start.x, z: start.z, g: 0, f: 0, parent: null };
+    this.end = { x: end.x, z: end.z };
+    this.openList = [];
+    this.closedList = [];
+  }
+  heuristic(a, b) {
+    return Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
+  }
+  getNeighbors(node) {
+    let neighbors = [];
+    let dirs = [[-250, 0], [250, 0], [0, -250], [0, 250]];
+    for (let d of dirs) {
+      let nx = node.x + d[0];
+      let nz = node.z + d[1];
+      if (nx >= 25 && nx <= 1275 && nz >= 25 && nz <= 1275) {
+        neighbors.push({ x: nx, z: nz, g: 0, f: 0, parent: null });
+      }
+    }
+    return neighbors;
+  }
+  findPath() {
+    this.start.f = this.heuristic(this.start, this.end);
+    this.openList.push(this.start);
+    while (this.openList.length > 0) {
+      this.openList.sort((a, b) => a.f - b.f);
+      let current = this.openList.shift();
+      this.closedList.push(current);
+      if (current.x === this.end.x && current.z === this.end.z) {
+        let path = [];
+        let curr = current;
+        while (curr) {
+          path.push(new THREE.Vector3(curr.x, 5, curr.z));
+          curr = curr.parent;
+        }
+        return path.reverse();
+      }
+      let neighbors = this.getNeighbors(current);
+      for (let neighbor of neighbors) {
+        if (this.closedList.find(n => n.x === neighbor.x && n.z === neighbor.z)) continue;
+        let gScore = current.g + 250;
+        let existing = this.openList.find(n => n.x === neighbor.x && n.z === neighbor.z);
+        if (!existing || gScore < existing.g) {
+          neighbor.parent = current;
+          neighbor.g = gScore;
+          neighbor.f = neighbor.g + this.heuristic(neighbor, this.end);
+          if (!existing) this.openList.push(neighbor);
+        }
+      }
+    }
+    return [new THREE.Vector3(this.start.x, 5, this.start.z), new THREE.Vector3(this.end.x, 5, this.end.z)];
+  }
+}
+
 const control = {
   play: true,
   tSpeed: 0.001,
@@ -31,6 +86,9 @@ const control = {
   contactedWithBlobs: 10,
   infectionChance: 5,
   showPaths: false,
+  maskMandate: false,
+  socialDistancing: false,
+  lockdown: false,
   reload: function () {
     this.play = false;
     resetBlobs();
@@ -303,24 +361,29 @@ function generatePath(src, dst) {
   d01.setX(isHouseLeft(dst[1]) ? d1.x + 80 : d1.x - 80);
   var d2 = new THREE.Vector3(d1.x, 5, 25 + 250 * dstY);
 
-  var m1 = new THREE.Vector3(25 + 250 * (randomInt(srcX, dstX) - 1), 5, s2.z);
-  var m2 = new THREE.Vector3(m1.x, 5, d2.z);
+  var astar = new AStar(s2, d2);
+  var pathNodes = astar.findPath();
+
   s01.applyMatrix4(matrix);
-  d01.applyMatrix4(matrix);
   s1.applyMatrix4(matrix);
-  s2.applyMatrix4(matrix);
-  d1.applyMatrix4(matrix);
-  d2.applyMatrix4(matrix);
-  m1.applyMatrix4(matrix);
-  m2.applyMatrix4(matrix);
 
   pointsPath.add(new THREE.LineCurve3(s01, s1));
-  pointsPath.add(new THREE.LineCurve3(s1, s2));
-  pointsPath.add(new THREE.LineCurve3(s2, m1));
-  pointsPath.add(new THREE.LineCurve3(m1, m2));
-  pointsPath.add(new THREE.LineCurve3(m2, d2));
+  pointsPath.add(new THREE.LineCurve3(s1, s2.clone().applyMatrix4(matrix)));
+
+  for (let i = 0; i < pathNodes.length - 1; i++) {
+    let p1 = pathNodes[i].clone().applyMatrix4(matrix);
+    let p2 = pathNodes[i + 1].clone().applyMatrix4(matrix);
+    pointsPath.add(new THREE.LineCurve3(p1, p2));
+  }
+
+  d2.applyMatrix4(matrix);
+  d1.applyMatrix4(matrix);
+  d01.applyMatrix4(matrix);
+
+  pointsPath.add(new THREE.LineCurve3(pathNodes[pathNodes.length - 1].clone().applyMatrix4(matrix), d2));
   pointsPath.add(new THREE.LineCurve3(d2, d1));
   pointsPath.add(new THREE.LineCurve3(d1, d01));
+
   var points = pointsPath.curves.reduce(
     (p, d) => [...p, ...d.getPoints(20)],
     []
@@ -336,6 +399,7 @@ function generatePath(src, dst) {
     points: pointsPath,
     sphere: generateBlob(),
     isInfected: false,
+    stayHome: Math.random() < 0.7,
   });
 }
 
@@ -372,8 +436,13 @@ function isHouseUpper(index) {
 
 function render() {
   pathsArray.forEach((e) => {
-    var newPos = e.points.getPoint(t);
-    e.sphere.position.set(newPos.x, newPos.y, newPos.z);
+    if (control.lockdown && e.stayHome && !e.isInfected) {
+      var homePos = e.points.getPoint(0);
+      e.sphere.position.set(homePos.x, homePos.y, homePos.z);
+    } else {
+      var newPos = e.points.getPoint(t);
+      e.sphere.position.set(newPos.x, newPos.y, newPos.z);
+    }
   });
   if (t - control.tSpeed <= 0 && isBlobGoingBack) {
     isBlobGoingBack = false;
@@ -389,17 +458,26 @@ function render() {
 function infectBlobs() {
   var initInfectedBlobs = control.infectedBlobs;
   for (var i = 0; i < initInfectedBlobs; i++) {
-    for (var j = 1; j < control.contactedWithBlobs; j++) {
-      if (probability(control.infectionChance)) {
+    var contacts = control.contactedWithBlobs;
+    if (control.socialDistancing) {
+      contacts = Math.max(1, Math.floor(contacts / 2));
+    }
+    for (var j = 1; j < contacts; j++) {
+      var chance = control.infectionChance;
+      if (control.maskMandate) {
+        chance = chance / 2;
+      }
+      if (probability(chance)) {
         var blobIndex = randomInt(0, pathsArray.length - 1);
-        if (pathsArray[blobIndex].isInfected == false) {
-          pathsArray[blobIndex].sphere.material.color = new THREE.Color(
-            0xef233c
-          );
-          pathsArray[blobIndex].isInfected = true;
+        var targetBlob = pathsArray[blobIndex];
+        if (control.lockdown && targetBlob.stayHome && !targetBlob.isInfected) {
+           continue;
+        }
+        if (targetBlob.isInfected == false) {
+          targetBlob.sphere.material.color = new THREE.Color(0xef233c);
+          targetBlob.isInfected = true;
           control.infectedBlobs += 1;
-          document.querySelector(".case-counter").innerHTML =
-            control.infectedBlobs + "/" + control.peopleCount;
+          document.querySelector(".case-counter").innerHTML = control.infectedBlobs + "/" + control.peopleCount;
         }
       }
     }
@@ -410,25 +488,23 @@ function infectBlobs() {
 
 function initControls() {
   var gui = new dat.GUI({ width: 400 });
+  
+  var policySettings = gui.addFolder("Policy Controls");
+  policySettings.add(control, "maskMandate").name("Mask Mandate");
+  policySettings.add(control, "socialDistancing").name("Social Distancing");
+  policySettings.add(control, "lockdown").name("Lockdown (70% Stay Home)");
+  policySettings.open();
+
   var populationSetings = gui.addFolder("Population");
-  populationSetings
-    .add(control, "peopleCount", 50, 500, 2)
-    .name("Population (Reload)");
-  populationSetings
-    .add(control, "tSpeed", 0.0005, 0.01, 0.000095)
-    .name("Blob Speed");
+  populationSetings.add(control, "peopleCount", 50, 500, 2).name("Population (Reload)");
+  populationSetings.add(control, "tSpeed", 0.0005, 0.01, 0.000095).name("Blob Speed");
   populationSetings.open();
 
   var infectionSettings = gui.addFolder("Disease Spread");
-  infectionSettings
-    .add(control, "infectedBlobs", 1, 50, 1)
-    .name("Infected Blobs (Reload)");
-  infectionSettings
-    .add(control, "infectionChance", 1, 50, 1)
-    .name("Infection Chance (%)");
-  infectionSettings
-    .add(control, "contactedWithBlobs", 1, 50, 1)
-    .name("Physical contacts per blob");
+  infectionSettings.add(control, "infectedBlobs", 1, 50, 1).name("Infected Blobs (Reload)");
+  infectionSettings.add(control, "infectionChance", 1, 50, 1).name("Infection Chance (%)");
+  infectionSettings.add(control, "contactedWithBlobs", 1, 50, 1).name("Physical contacts per blob");
+  
   var controls = gui.addFolder("Controls");
   controls.add(control, "showPaths").name("Show paths (Reload)");
   controls.add(control, "stopAnimation").name("Play/Stop Simulation");
